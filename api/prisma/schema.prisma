@@ -1,0 +1,204 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// --------------------------------------------------------
+// 1. Tabelas de Domínio e Localização
+// --------------------------------------------------------
+
+model Estado {
+  id      Int      @id @default(autoincrement())
+  uf      String   @unique @db.VarChar(2)
+  nome    String   @db.VarChar(50)
+  cidades Cidade[]
+
+  @@map("estados")
+}
+
+model Cidade {
+  id       Int      @id @default(autoincrement())
+  estadoId Int      @map("estado_id")
+  nome     String   @db.VarChar(100)
+  estado   Estado   @relation(fields: [estadoId], references: [id])
+  bairros  Bairro[]
+
+  @@map("cidades")
+}
+
+model Bairro {
+  id           Int           @id @default(autoincrement())
+  cidadeId     Int           @map("cidade_id")
+  nome         String        @db.VarChar(100)
+  cidade       Cidade        @relation(fields: [cidadeId], references: [id])
+  equipamentos Equipamento[]
+
+  @@map("bairros")
+}
+
+model Marca {
+  id       Int      @id @default(autoincrement())
+  nome     String   @unique @db.VarChar(100)
+  criadoEm DateTime @default(now()) @map("criado_em") @db.Timestamp(6)
+  modelos  Modelo[]
+
+  @@map("marcas")
+}
+
+model TipoEquipamento {
+  id           Int      @id @default(autoincrement())
+  nome         String   @unique @db.VarChar(50) // 'Radar', 'Câmera'
+  criadoEm     DateTime @default(now()) @map("criado_em") @db.Timestamp(6)
+  atualizadoEm DateTime @default(now()) @updatedAt @map("atualizado_em") @db.Timestamp(6)
+  modelos      Modelo[]
+
+  @@map("tipos_equipamentos")
+}
+
+model Modelo {
+  id                Int             @id @default(autoincrement())
+  marcaId           Int             @map("marca_id")
+  nome              String          @db.VarChar(100)
+  tipoEquipamentoId Int             @map("tipo_equipamento_id")
+  criadoEm          DateTime        @default(now()) @map("criado_em") @db.Timestamp(6)
+  marca             Marca           @relation(fields: [marcaId], references: [id])
+  tipoEquipamento   TipoEquipamento @relation(fields: [tipoEquipamentoId], references: [id])
+  equipamentos      Equipamento[]
+
+  @@map("modelos")
+}
+
+// --------------------------------------------------------
+// 2. Entidades Principais: Equipamentos e Agentes
+// --------------------------------------------------------
+
+model Orgao {
+  id           Int           @id @default(autoincrement())
+  nome         String        @unique @db.VarChar(150)
+  sigla        String        @db.VarChar(20)
+  equipamentos Equipamento[]
+  agentes      Agente[]
+
+  @@map("orgaos")
+}
+
+model TipoLocal {
+  id           Int           @id @default(autoincrement())
+  nome         String        @unique @db.VarChar(100)
+  equipamentos Equipamento[]
+
+  @@map("tipos_locais")
+}
+
+model Equipamento {
+  id                         Int                                   @id @default(autoincrement())
+  modeloId                   Int                                   @map("modelo_id")
+  numeroSerie                String?                               @unique @map("numero_serie") @db.VarChar(100)
+  situacao                   String                                @db.VarChar(50) // 'ainda_nao_instalado', 'operacional', 'mau_funcionamento', 'desativado', 'furtado'
+  cep                        String?                               @db.VarChar(9)
+  bairroId                   Int                                   @map("bairro_id")
+  logradouro                 String?                               @db.VarChar(150)
+  numeroReferencia           String?                               @map("numero_referencia") @db.VarChar(50)
+  coordenadas                Unsupported("geometry(Point, 4326)")?
+  caracteristicasEspecificas Json?                                 @map("caracteristicas_especificas")
+  dataInstalacao             DateTime?                             @map("data_instalacao") @db.Timestamp(6)
+  urlImagem                  String?                               @map("url_imagem")
+  tipoLocalId                Int?                                  @map("tipo_local_id")
+  orgaoId                    Int?                                  @map("orgao_id")
+  necessidadeManutencao      String?                               @map("necessidade_manutencao")
+  dataProximaManutencao      DateTime?                             @map("data_proxima_manutencao") @db.Timestamp(6)
+  criadoEm                   DateTime                              @default(now()) @map("criado_em") @db.Timestamp(6)
+  atualizadoEm               DateTime                              @default(now()) @updatedAt @map("atualizado_em") @db.Timestamp(6)
+
+  modelo      Modelo            @relation(fields: [modeloId], references: [id])
+  bairro      Bairro            @relation(fields: [bairroId], references: [id])
+  tipoLocal   TipoLocal?        @relation(fields: [tipoLocalId], references: [id])
+  orgao       Orgao?            @relation(fields: [orgaoId], references: [id])
+  manutencoes Manutencao[]
+  incidentes  IncidenteAlerta[]
+
+  @@index([situacao], map: "idx_equipamentos_situacao")
+  @@map("equipamentos")
+}
+
+model TipoAgente {
+  id           Int      @id @default(autoincrement())
+  nome         String   @unique @db.VarChar(50) // 'agente_transito', 'guarda_municipal', 'pm'
+  descricao    String?  @db.Text
+  criadoEm     DateTime @default(now()) @map("criado_em") @db.Timestamp(6)
+  atualizadoEm DateTime @default(now()) @updatedAt @map("atualizado_em") @db.Timestamp(6)
+  agentes      Agente[]
+
+  @@map("tipos_agentes")
+}
+
+model Agente {
+  id                Int                                   @id @default(autoincrement())
+  tipoAgenteId      Int                                   @map("tipo_agente_id")
+  nome              String                                @db.VarChar(150)
+  matricula         String                                @unique @db.VarChar(50)
+  situacao          String                                @db.VarChar(50) // 'ativo', 'inativo', 'em_patrulha'
+  coordenadasAtuais Unsupported("geometry(Point, 4326)")? @map("coordenadas_atuais")
+  urlFoto           String?                               @map("url_foto")
+  orgaoId           Int?                                  @map("orgao_id")
+  atualizadoEm      DateTime                              @default(now()) @updatedAt @map("atualizado_em") @db.Timestamp(6)
+
+  tipoAgente TipoAgente @relation(fields: [tipoAgenteId], references: [id])
+  orgao      Orgao?     @relation(fields: [orgaoId], references: [id])
+
+  @@index([situacao], map: "idx_agentes_situacao")
+  @@map("agentes")
+}
+
+// --------------------------------------------------------
+// 3. Manutenções, Histórico e Alertas
+// --------------------------------------------------------
+
+model Manutencao {
+  id             Int         @id @default(autoincrement())
+  equipamentoId  Int         @map("equipamento_id")
+  tipoManutencao String      @map("tipo_manutencao") @db.VarChar(50) // 'imediata', 'periodica'
+  status         String      @db.VarChar(50) // 'agendada', 'concluida'
+  dataPrevista   DateTime?   @map("data_prevista") @db.Timestamp(6)
+  dataConclusao  DateTime?   @map("data_conclusao") @db.Timestamp(6)
+  descricao      String?
+  criadoEm       DateTime    @default(now()) @map("criado_em") @db.Timestamp(6)
+  equipamento    Equipamento @relation(fields: [equipamentoId], references: [id])
+
+  @@index([status], map: "idx_manutencoes_status")
+  @@map("manutencoes")
+}
+
+model HistoricoEvento {
+  id           Int      @id @default(autoincrement())
+  entidadeTipo String   @map("entidade_tipo") @db.VarChar(20) // 'equipamento' ou 'agente'
+  entidadeId   Int      @map("entidade_id")
+  evento       String   @db.VarChar(100) // 'mudanca_status', 'falha_detectada', 'manutencao_agendada'
+  detalhes     Json?
+  criadoEm     DateTime @default(now()) @map("criado_em") @db.Timestamp(6)
+
+  @@map("historico_eventos")
+}
+
+model IncidenteAlerta {
+  id             Int                                  @id @default(autoincrement())
+  titulo         String
+  criticidade    String // 'alta', 'media', 'baixa'
+  status         String // 'ativo', 'resolvido'
+  coordenadas    Unsupported("geometry(Point, 4326)")
+  equipamentoId  Int?                                 @map("equipamento_id")
+  fonte          String // 'PROMETHEUS_IA', 'OPERADOR'
+  dataOcorrencia DateTime                             @map("data_ocorrencia") @db.Timestamp(6)
+  justificativaIa String?                             @map("justificativa_ia") @db.Text
+  probabilidade  Int?
+  criadoEm       DateTime                             @default(now()) @map("criado_em") @db.Timestamp(6)
+  atualizadoEm   DateTime                             @default(now()) @updatedAt @map("atualizado_em") @db.Timestamp(6)
+
+  equipamento Equipamento? @relation(fields: [equipamentoId], references: [id])
+
+  @@map("incidentes_alertas")
+}
