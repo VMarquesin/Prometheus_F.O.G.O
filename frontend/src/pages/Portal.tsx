@@ -9,14 +9,14 @@ export default function Portal() {
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_30%,rgba(34,211,238,0.12),transparent_60%)]" />
       <div className="pointer-events-none absolute inset-0 opacity-[0.07] bg-[linear-gradient(to_right,#22d3ee_1px,transparent_1px),linear-gradient(to_bottom,#22d3ee_1px,transparent_1px)] bg-[size:48px_48px]" />
 
-      <section className="relative z-10 max-w-3xl text-center">
+      <section className="relative z-10 w-full max-w-5xl text-center">
         <div className="mb-8 flex items-center justify-center gap-6 text-cyan-400">
           <Shield className="h-8 w-8" />
           <Cpu className="h-10 w-10 animate-pulse" />
           <Activity className="h-8 w-8" />
         </div>
 
-        <h1 className="text-6xl md:text-8xl font-black tracking-[0.25em] text-transparent bg-clip-text bg-gradient-to-b from-white to-cyan-400 drop-shadow-[0_0_25px_rgba(34,211,238,0.35)]">
+        <h1 className="text-6xl md:text-8xl font-black tracking-[0.25em] pl-[0.25em] text-transparent bg-clip-text bg-gradient-to-b from-white to-cyan-400 drop-shadow-[0_0_25px_rgba(34,211,238,0.35)]">
           PROMETHEUS
         </h1>
         <h2 className="mt-4 text-lg md:text-2xl font-mono tracking-[0.4em] text-cyan-300/80 uppercase">

@@ -27,4 +27,31 @@ export class AgenteService {
   async listarAgentes() {
     return this.repository.listar();
   }
+
+  async buscarPorId(id: number) {
+    return this.repository.buscarPorId(id);
+  }
+
+  async atualizarAgente(id: number, dados: Partial<AgenteInput>) {
+    const existente = await this.repository.buscarPorId(id);
+    if (!existente) {
+      throw new ValidacaoError('Agente não encontrado.');
+    }
+
+    const temLat = dados.latitude != null;
+    const temLng = dados.longitude != null;
+    if ((temLat && !temLng) || (!temLat && temLng)) {
+      throw new ValidacaoError('Informe latitude e longitude juntas.');
+    }
+
+    return this.repository.atualizar(id, dados);
+  }
+
+  async excluirAgente(id: number) {
+    const existente = await this.repository.buscarPorId(id);
+    if (!existente) {
+      throw new ValidacaoError('Agente não encontrado.');
+    }
+    return this.repository.excluir(id);
+  }
 }

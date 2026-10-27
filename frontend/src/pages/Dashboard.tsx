@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
@@ -8,22 +9,24 @@ import markerIcon from 'leaflet/dist/images/marker-icon.png';
 import markerShadow from 'leaflet/dist/images/marker-shadow.png';
 import { io } from 'socket.io-client';
 import {
-  Search,
-  Plus,
-  Radio,
-  User,
-  Video,
-  ShieldCheck,
-  CheckCircle2,
   Flame,
-  Map as MapIcon,
-  Edit2,
-  Trash2,
-  MapPin,
-  ChevronLeft,
-  ChevronRight,
+  Radio,
+  PlusSquare,
+  Shield,
+  Cpu,
+  Wifi,
+  Clock,
   Eye,
-  Users,
+  EyeOff,
+  AlertTriangle,
+  Send,
+  Maximize2,
+  X,
+  Search,
+  HardDrive,
+  Crosshair,
+  Siren,
+  CheckCircle,
 } from 'lucide-react';
 import { EquipamentoModal } from '../components/EquipamentoModal';
 import { AgenteModal } from '../components/AgenteModal';
@@ -64,6 +67,18 @@ interface Agente {
   orgaoId?: number | null;
 }
 
+interface AlertaIA {
+  id: string | number;
+  origem: string;
+  titulo: string;
+  tipo: 'critico' | 'atencao' | 'info';
+  probabilidade?: number;
+  tempo: string;
+  subtexto?: string;
+  latitude?: number;
+  longitude?: number;
+}
+
 type Coordenada = { latitude: number; longitude: number };
 
 const temCoordenadas = <T extends { latitude: number | null; longitude: number | null }>(
@@ -74,60 +89,85 @@ const temCoordenadas = <T extends { latitude: number | null; longitude: number |
   typeof item.longitude === 'number' &&
   Number.isFinite(item.longitude);
 
-// Marcador SVG nativo (sem imagens externas)
-const criarPin = (cor: string, pulsar = false) =>
+// Marcadores Cyberpunk SVG / HTML puro
+const criarPinOperacional = () =>
   L.divIcon({
-    className: '',
+    className: 'cyber-pin-operacional',
     html: `
-      <div style="position:relative;width:32px;height:42px;">
-        ${pulsar
-        ? `<span style="position:absolute;left:4px;top:4px;width:24px;height:24px;border-radius:50%;background:${cor};opacity:.6;" class="animate-ping"></span>`
-        : ''
-      }
-        <svg width="32" height="42" viewBox="0 0 32 42" xmlns="http://www.w3.org/2000/svg" style="position:relative;filter:drop-shadow(0 2px 4px rgba(0,0,0,.5));">
-          <path d="M16 0C7.2 0 0 7.1 0 15.9 0 27.5 16 42 16 42s16-14.5 16-26.1C32 7.1 24.8 0 16 0z" fill="${cor}" stroke="#fff" stroke-width="2"/>
-          <circle cx="16" cy="16" r="6" fill="#fff"/>
-        </svg>
-      </div>`,
-    iconSize: [32, 42],
-    iconAnchor: [16, 42],
-    popupAnchor: [0, -38],
+      <div class="relative flex items-center justify-center w-6 h-6">
+        <div class="absolute -inset-1 rounded-full bg-cyan-400 opacity-40 animate-pulse"></div>
+        <div class="relative w-3.5 h-3.5 bg-cyan-400 rounded-full border-2 border-white shadow-[0_0_12px_#22d3ee]"></div>
+      </div>
+    `,
+    iconSize: [24, 24],
+    iconAnchor: [12, 12],
+    popupAnchor: [0, -14],
   });
 
-const ICONE_AZUL = criarPin('#3b82f6');
-const ICONE_VERMELHO = criarPin('#ef4444', true);
-const ICONE_CINZA = criarPin('#6b7280');
-const ICONE_AGENTE = criarPin('#eab308');
+const criarPinAgente = () =>
+  L.divIcon({
+    className: 'cyber-pin-agente',
+    html: `
+      <div class="relative flex items-center justify-center w-6 h-6">
+        <div class="absolute -inset-1 rounded-full bg-amber-400 opacity-30 animate-pulse"></div>
+        <div class="relative w-3.5 h-3.5 bg-amber-400 rounded-full border-2 border-white shadow-[0_0_12px_#f59e0b]"></div>
+      </div>
+    `,
+    iconSize: [24, 24],
+    iconAnchor: [12, 12],
+    popupAnchor: [0, -14],
+  });
 
-const iconePorSituacao = (situacao: string) => {
-  switch (situacao.toLowerCase()) {
-    case 'mau_funcionamento':
-      return ICONE_VERMELHO;
-    case 'operacional':
-      return ICONE_AZUL;
-    default:
-      return ICONE_CINZA;
-  }
-};
+const criarPinAlerta = (label: string) =>
+  L.divIcon({
+    className: 'cyber-pin-alerta',
+    html: `
+      <div class="relative flex flex-col items-center">
+        <div class="relative flex items-center justify-center w-7 h-7">
+          <span class="absolute -inset-1.5 rounded-full bg-red-600 opacity-75 animate-ping"></span>
+          <span class="relative w-4 h-4 rounded-full bg-red-600 border-2 border-white shadow-[0_0_18px_#ef4444]"></span>
+        </div>
+        <div class="mt-1 bg-zinc-950/95 border border-red-500/80 rounded px-2 py-0.5 text-[9px] font-mono font-bold text-white whitespace-nowrap shadow-2xl flex items-center gap-1.5 backdrop-blur-md">
+          <span class="text-red-400 uppercase tracking-wider">${label}</span>
+          <span class="bg-red-600 text-white px-1 rounded text-[8px] font-mono">RISCO</span>
+        </div>
+      </div>
+    `,
+    iconSize: [32, 48],
+    iconAnchor: [16, 16],
+    popupAnchor: [0, -20],
+  });
 
-// Camada de mapa de calor (leaflet.heat)
+const PIN_OPERACIONAL = criarPinOperacional();
+const PIN_AGENTE = criarPinAgente();
+const PIN_DESATIVADO = L.divIcon({
+  className: 'cyber-pin-desativado',
+  html: `<div class="w-3 h-3 bg-zinc-500 rounded-full border-2 border-zinc-300"></div>`,
+  iconSize: [12, 12],
+  iconAnchor: [6, 6],
+  popupAnchor: [0, -8],
+});
+
+// Camada de Mapa de Calor (leaflet.heat) com paleta tática
 function HeatmapLayer({ pontos }: { pontos: any[] }) {
   const map = useMap();
 
   useEffect(() => {
-    const validos = pontos.filter(p => p.latitude && p.longitude);
+    const validos = pontos.filter((p) => p && p.latitude && p.longitude);
     if (validos.length === 0) return;
-    const coordenadas = validos.map(p => [p.latitude, p.longitude, 1]);
+    const coordenadas = validos.map((p) => [p.latitude, p.longitude, p.intensidade || 0.9]);
+
     const heatOptions = {
-      radius: 40,
-      blur: 20,
-      maxZoom: 14,
+      radius: 50,
+      blur: 28,
+      maxZoom: 15,
       max: 1.0,
       gradient: {
-        0.4: 'yellow',
-        0.8: 'orange',
-        1.0: 'red'
-      }
+        0.2: '#06b6d4',
+        0.5: '#eab308',
+        0.8: '#f97316',
+        1.0: '#ef4444',
+      },
     };
 
     const camada = (L as any).heatLayer(coordenadas, heatOptions);
@@ -141,22 +181,6 @@ function HeatmapLayer({ pontos }: { pontos: any[] }) {
   return null;
 }
 
-const SITUACOES_EQUIPAMENTO = [
-  { valor: 'todos', rotulo: 'Todas as Situações' },
-  { valor: 'operacional', rotulo: 'Operacional' },
-  { valor: 'mau_funcionamento', rotulo: 'Mau Funcionamento' },
-  { valor: 'manutencao', rotulo: 'Manutenção' },
-  { valor: 'desativado', rotulo: 'Desativado' },
-  { valor: 'ainda_nao_instalado', rotulo: 'Não Instalado' },
-];
-
-const SITUACOES_AGENTE = [
-  { valor: 'todos', rotulo: 'Todas as Situações' },
-  { valor: 'ativo', rotulo: 'Ativo' },
-  { valor: 'em_patrulha', rotulo: 'Em Patrulha' },
-  { valor: 'inativo', rotulo: 'Inativo' },
-];
-
 const abrirFeed = (latitude: number, longitude: number) => {
   window.open(
     `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${latitude},${longitude}`,
@@ -165,20 +189,99 @@ const abrirFeed = (latitude: number, longitude: number) => {
   );
 };
 
+function MapFlyTo({ lat, lng }: { lat: string | null; lng: string | null }) {
+  const map = useMap();
+  useEffect(() => {
+    if (lat && lng) {
+      map.flyTo([parseFloat(lat), parseFloat(lng)], 18, { duration: 1.5 });
+    }
+  }, [lat, lng, map]);
+  return null;
+}
+
+function MapController({ coordenadaFoco }: { coordenadaFoco?: { lat: number; lng: number } }) {
+  const map = useMap();
+  useEffect(() => {
+    if (coordenadaFoco && coordenadaFoco.lat && coordenadaFoco.lng) {
+      map.flyTo([coordenadaFoco.lat, coordenadaFoco.lng], 17, { duration: 1.5 });
+    }
+  }, [coordenadaFoco, map]);
+  return null;
+}
+
 export default function Dashboard() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
+  const focoLat = searchParams.get('lat');
+  const focoLng = searchParams.get('lng');
+  const focoMapa = location.state?.focoMapa;
   const [equipamentos, setEquipamentos] = useState<Equipamento[]>([]);
   const [agentes, setAgentes] = useState<Agente[]>([]);
-  const [abaAtiva, setAbaAtiva] = useState<'equipamentos' | 'agentes'>('equipamentos');
+  const [modoHeatmap, setModoHeatmap] = useState(false);
+  const [mostrarWidgets, setMostrarWidgets] = useState(true);
+  const [alertasIA, setAlertasIA] = useState<AlertaIA[]>([
+    {
+      id: '1',
+      origem: 'SENSOR-IOT-942B',
+      titulo: 'Anomalia Térmica e Bloqueio de Via (Av. Brasil x R. 24)',
+      tipo: 'critico',
+      probabilidade: 89,
+      tempo: 'Há 42s',
+      subtexto: 'Probabilidade Incêndio: 89%',
+      latitude: -21.9348,
+      longitude: -50.5146,
+    },
+    {
+      id: '2',
+      origem: 'SEMAFORO-TX-104',
+      titulo: 'Falha de Sincronia de Ciclo (Bairro Central). Manutenção sugerida em 2h.',
+      tipo: 'atencao',
+      tempo: 'Há 2 min',
+      subtexto: 'Desvio: +1.8s fase verde',
+    },
+    {
+      id: '3',
+      origem: 'RADAR-VEL-088',
+      titulo: 'Telemetria restabelecida via malha Mesh LoRaWAN tática. Perda de pacotes: 0.02%.',
+      tipo: 'info',
+      tempo: 'Há 4 min',
+    },
+  ]);
+  const [despachoModal, setDespachoModal] = useState<{ isOpen: boolean; alerta: any }>({
+    isOpen: false,
+    alerta: null,
+  });
+  const [agenteSelecionado, setAgenteSelecionado] = useState('');
+  const [toastMsg, setToastMsg] = useState<{ titulo: string; tipo: 'sucesso' | 'info' } | null>(null);
+
+  const mostrarToast = (mensagem: string, tipo: 'sucesso' | 'info' = 'sucesso') => {
+    setToastMsg({ titulo: mensagem, tipo });
+    setTimeout(() => setToastMsg(null), 4000);
+  };
+  const [menuAtivo, setMenuAtivo] = useState<
+    'dashboard' | 'inventario' | 'cadastro' | 'efetivo' | 'inteligencia'
+  >('dashboard');
+
+  // Drawer lateral de inventário rápido
+  const [isInventarioDrawerOpen, setIsInventarioDrawerOpen] = useState(false);
   const [termoBusca, setTermoBusca] = useState('');
   const [filtroSituacao, setFiltroSituacao] = useState('todos');
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-  const [modoHeatmap, setModoHeatmap] = useState(false);
-  const [alertasIA, setAlertasIA] = useState<any[]>([]);
 
   // Modais de CRUD
   const [isEquipModalOpen, setIsEquipModalOpen] = useState(false);
   const [isAgenteModalOpen, setIsAgenteModalOpen] = useState(false);
   const [itemEmEdicao, setItemEmEdicao] = useState<any | null>(null);
+
+  // Relógio UTC dinâmico
+  const [utcTime, setUtcTime] = useState(() => new Date().toUTCString().slice(17, 25));
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setUtcTime(new Date().toUTCString().slice(17, 25));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   const carregarDados = () => {
     fetch(`${API_URL}/equipamentos`)
@@ -192,20 +295,54 @@ export default function Dashboard() {
       .catch((err) => console.error('Erro ao buscar agentes:', err));
   };
 
-  const handleExcluir = async (tipo: 'equipamento' | 'agente', id: number) => {
-    if (!confirm(`Deseja realmente excluir este ${tipo}?`)) return;
+  const handleDespachar = async () => {
+    if (!agenteSelecionado) {
+      mostrarToast('Por favor, selecione um agente disponível.', 'info');
+      return;
+    }
+
+    const idDoAgente = agenteSelecionado;
+    const alertaId = despachoModal.alerta?.id;
 
     try {
-      const rota = tipo === 'equipamento' ? 'equipamentos' : 'agentes';
-      await fetch(`${API_URL}/${rota}/${id}`, { method: 'DELETE' });
-    } catch (err) {
-      console.error('Erro ao excluir:', err);
-    } finally {
-      if (tipo === 'equipamento') {
-        setEquipamentos((prev) => prev.filter((item) => item.id !== id));
-      } else {
-        setAgentes((prev) => prev.filter((item) => item.id !== id));
+      const res = await fetch(`${API_URL}/agentes/${idDoAgente}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ situacao: 'Em Ocorrência' }),
+      });
+
+      if (!res.ok) {
+        throw new Error('Falha ao despachar agente');
       }
+
+      mostrarToast('Unidade despachada! Resolução da anomalia em andamento...');
+
+      if (alertaId != null) {
+        setAlertasIA((prev) => prev.filter((a) => String(a.id) !== String(alertaId)));
+      }
+
+      setDespachoModal({ isOpen: false, alerta: null });
+      setAgenteSelecionado('');
+      carregarDados();
+
+      // A Mágica (Auto-Healing): Ciclo de 15 segundos
+      setTimeout(async () => {
+        try {
+          await fetch(`${API_URL}/agentes/${idDoAgente}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ situacao: 'Patrulhamento Ativo' }),
+          });
+
+          carregarDados();
+          mostrarToast('Ocorrência finalizada com sucesso. Unidade livre para novo patrulhamento.');
+        } catch (err) {
+          console.error('Erro no auto-healing do agente:', err);
+        }
+      }, 15000);
+    } catch (err) {
+      console.error('Erro ao despachar agente:', err);
+      mostrarToast('Erro ao despachar agente. Verifique a conexão com o servidor.', 'info');
     }
   };
 
@@ -229,7 +366,19 @@ export default function Dashboard() {
     });
 
     socket.on('novo_alerta_ia', (alerta: any) => {
-      setAlertasIA((atual) => [...atual, alerta]);
+      setAlertasIA((atual) => [
+        {
+          id: alerta.id || Date.now(),
+          origem: alerta.fonte || 'PROMETHEUS_IA',
+          titulo: alerta.titulo || 'Anomalia Operacional Detectada',
+          tipo: alerta.criticidade === 'alta' ? 'critico' : 'atencao',
+          probabilidade: alerta.probabilidade || 85,
+          tempo: 'Agora',
+          latitude: alerta.latitude,
+          longitude: alerta.longitude,
+        },
+        ...atual,
+      ]);
     });
 
     return () => {
@@ -237,20 +386,37 @@ export default function Dashboard() {
     };
   }, []);
 
-  const trocarAba = (aba: 'equipamentos' | 'agentes') => {
-    setAbaAtiva(aba);
-    setFiltroSituacao('todos');
-    setTermoBusca('');
-  };
+  // Alertas Táticos Renderizados a partir do state dinâmico
+  const listaAlertasRender: AlertaIA[] = alertasIA;
 
-  // KPIs
+  // Cálculos de Indicadores Operacionais
+  const totalEquipamentos = equipamentos.length;
   const operacionais = equipamentos.filter((e) => e.situacao.toLowerCase() === 'operacional').length;
+  const taxaDisponibilidade =
+    totalEquipamentos > 0 ? ((operacionais / totalEquipamentos) * 100).toFixed(1) : '99.4';
   const agentesAtivos = agentes.filter((a) => {
     const sit = a.situacao.toLowerCase();
     return sit !== 'inativo' && sit !== 'folga';
   }).length;
 
-  // Listas filtradas
+  // Pontos combinados para o mapa de calor
+  const pontosHeatmap = useMemo<any[]>(() => {
+    const falhas = equipamentos
+      .filter((eq) => eq.situacao === 'mau_funcionamento' || eq.necessidadeManutencao === 'imediata')
+      .map((eq) => ({ latitude: eq.latitude, longitude: eq.longitude, intensidade: 1.0 }));
+
+    const alertas = listaAlertasRender
+      .filter((al) => al.latitude && al.longitude)
+      .map((al) => ({ latitude: al.latitude, longitude: al.longitude, intensidade: 0.9 }));
+
+    // Se estiver vazio, usa o centro de Tupã para demonstração térmica radiante
+    if (falhas.length === 0 && alertas.length === 0) {
+      return [{ latitude: -21.9348, longitude: -50.5146, intensidade: 0.95 }];
+    }
+    return [...falhas, ...alertas];
+  }, [equipamentos, listaAlertasRender]);
+
+  // Filtros da gaveta de inventário
   const equipamentosFiltrados = equipamentos.filter((item) => {
     const termo = termoBusca.toLowerCase().trim();
     const matchTexto =
@@ -261,421 +427,417 @@ export default function Dashboard() {
     return matchTexto && matchSit;
   });
 
-  const agentesFiltrados = agentes.filter((item) => {
-    const termo = termoBusca.toLowerCase().trim();
-    const matchTexto =
-      !termo ||
-      item.nome.toLowerCase().includes(termo) ||
-      item.matricula.toLowerCase().includes(termo);
-    const matchSit = filtroSituacao === 'todos' || item.situacao.toLowerCase() === filtroSituacao;
-    return matchTexto && matchSit;
-  });
-
-  // Pontos do heatmap: equipamentos que precisam de atenção + alertas da IA preditiva
-  const pontosHeatmap = useMemo<any[]>(
-    () => [
-      ...equipamentos.filter(
-        (eq) => eq.situacao === 'mau_funcionamento' || eq.necessidadeManutencao === 'imediata',
-      ),
-      ...alertasIA,
-    ],
-    [equipamentos, alertasIA],
-  );
-
-  const classeSituacaoEquip = (situacao: string) => {
-    const sit = situacao.toLowerCase();
-    if (sit === 'mau_funcionamento')
-      return 'bg-red-500/20 text-red-400 border border-red-500/40';
-    if (sit === 'operacional') return 'bg-blue-500/10 text-blue-400 border border-blue-500/30';
-    return 'bg-zinc-800 text-zinc-400 border border-zinc-700';
-  };
-
-  const situacoesDisponiveis = abaAtiva === 'equipamentos' ? SITUACOES_EQUIPAMENTO : SITUACOES_AGENTE;
-
   return (
-    <div className="flex h-screen w-full flex-row overflow-hidden bg-zinc-950 text-zinc-100">
-      {/* Painel Lateral */}
-      <aside
-        className={`h-full shrink-0 overflow-y-auto bg-zinc-900 border-r border-zinc-800 transition-all duration-300 ${isSidebarOpen ? 'w-96 p-4' : 'w-0 p-0 border-r-0 overflow-hidden'
-          }`}
-      >
-        {isSidebarOpen && (
-          <div className="flex min-h-full flex-col">
-            <div className="mb-4 flex items-center gap-2">
-              <div className="h-2.5 w-2.5 rounded-full bg-cyan-400 animate-pulse shadow-[0_0_10px_#22d3ee]" />
-              <h1 className="font-mono text-xs font-semibold uppercase tracking-wider text-cyan-300">
-                Central de Operações F.O.G.O.
-              </h1>
+    <div className="flex h-screen w-full bg-zinc-950 text-zinc-300 overflow-hidden font-sans select-none">
+      {/* 1. NAVEGAÇÃO LATERAL (SIDEBAR CYBER) */}
+      <aside className="w-64 bg-[#0a0e14] border-r border-zinc-800/80 flex flex-col justify-between shrink-0 z-30">
+        <div>
+          {/* Logo / Header da Sidebar */}
+          <div className="p-5 border-b border-zinc-800/60 flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-orange-500/10 border border-orange-500/30 flex items-center justify-center text-orange-400 shadow-[0_0_12px_rgba(249,115,22,0.25)]">
+              <Flame className="h-5 w-5 fill-orange-500/40" />
             </div>
+            <div>
+              <div className="font-mono font-black tracking-widest text-white text-sm">
+                PROMETHEUS
+              </div>
+              <div className="flex items-center gap-1.5 text-[10px] font-mono font-bold tracking-widest text-cyan-400">
+                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping"></span>
+                SYS.ONLINE V4.2
+              </div>
+            </div>
+          </div>
+
+          {/* Categoria */}
+          <div className="px-5 pt-6 pb-2 text-[10px] font-mono tracking-widest text-zinc-500 uppercase font-bold">
+            Navegação Operacional
+          </div>
+
+          {/* Menus de Navegação */}
+          <nav className="space-y-1 px-2">
+            <button
+              onClick={() => {
+                setMenuAtivo('dashboard');
+                setIsInventarioDrawerOpen(false);
+              }}
+              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-r-md text-xs font-mono tracking-wider transition-all cursor-pointer ${menuAtivo === 'dashboard'
+                ? 'text-cyan-300 bg-cyan-950/40 border-l-4 border-cyan-400 font-semibold shadow-[inset_0_0_15px_rgba(6,182,212,0.15)]'
+                : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/60'
+                }`}
+            >
+              <Radio className="h-4 w-4 text-cyan-400" />
+              <span>Dashboard de Operações</span>
+            </button>
 
             <button
               onClick={() => {
-                setItemEmEdicao(null);
-                if (abaAtiva === 'equipamentos') {
-                  setIsEquipModalOpen(true);
-                } else {
-                  setIsAgenteModalOpen(true);
-                }
+                navigate('/inventario');
               }}
-              className="mb-3.5 flex w-full items-center justify-center gap-2 rounded-lg border border-cyan-500/50 bg-cyan-500/10 px-4 py-2.5 font-mono text-xs font-bold tracking-wider text-cyan-300 shadow-[0_0_15px_rgba(34,211,238,0.2)] transition-all hover:bg-cyan-500/20 cursor-pointer"
+              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-r-md text-xs font-mono tracking-wider transition-all cursor-pointer ${menuAtivo === 'inventario'
+                ? 'text-cyan-300 bg-cyan-950/40 border-l-4 border-cyan-400 font-semibold'
+                : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/60'
+                }`}
             >
-              <Plus className="h-4 w-4" />
-              ADICIONAR NOVO
+              <HardDrive className="h-4 w-4 text-zinc-400" />
+              <span>Inventário de Equipamentos</span>
             </button>
 
-            {/* Abas */}
-            <div className="mb-3.5 grid grid-cols-2 gap-1 rounded-lg border border-zinc-800 bg-zinc-950 p-1">
-              <button
-                onClick={() => trocarAba('equipamentos')}
-                className={`flex items-center justify-center gap-2 rounded-md py-2 font-mono text-xs font-medium transition-all cursor-pointer ${abaAtiva === 'equipamentos'
-                  ? 'border border-cyan-500/30 bg-zinc-800 text-cyan-300'
-                  : 'text-zinc-400 hover:text-zinc-200'
-                  }`}
-              >
-                <Radio className="h-3.5 w-3.5" />
-                Equipamentos
-              </button>
-              <button
-                onClick={() => trocarAba('agentes')}
-                className={`flex items-center justify-center gap-2 rounded-md py-2 font-mono text-xs font-medium transition-all cursor-pointer ${abaAtiva === 'agentes'
-                  ? 'border border-yellow-500/30 bg-zinc-800 text-yellow-300'
-                  : 'text-zinc-400 hover:text-zinc-200'
-                  }`}
-              >
-                <User className="h-3.5 w-3.5" />
-                Agentes
-              </button>
-            </div>
+            <button
+              onClick={() => {
+                navigate('/cadastro-equipamento');
+              }}
+              className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-r-md text-xs font-mono tracking-wider text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/60 transition-all cursor-pointer"
+            >
+              <PlusSquare className="h-4 w-4 text-zinc-400" />
+              <span>Cadastro de Equipamento</span>
+            </button>
 
-            {/* Filtros */}
-            <div className="mb-3.5 space-y-2">
-              <div className="relative">
-                <Search className="absolute left-3 top-2.5 h-4 w-4 text-zinc-500" />
-                <input
-                  type="text"
-                  value={termoBusca}
-                  onChange={(e) => setTermoBusca(e.target.value)}
-                  placeholder={
-                    abaAtiva === 'equipamentos' ? 'Buscar por serial ou ID...' : 'Buscar por nome ou matrícula...'
-                  }
-                  className="w-full rounded-md border border-zinc-800 bg-zinc-950 py-2 pl-9 pr-3 text-xs text-zinc-200 placeholder-zinc-500 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
-                />
-              </div>
-              <select
-                value={filtroSituacao}
-                onChange={(e) => setFiltroSituacao(e.target.value)}
-                className="w-full rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2 text-xs text-zinc-300 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500"
-              >
-                {situacoesDisponiveis.map((s) => (
-                  <option key={s.valor} value={s.valor}>
-                    {s.rotulo}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <button
+              onClick={() => {
+                navigate('/efetivo-agentes');
+              }}
+              className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-r-md text-xs font-mono tracking-wider text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/60 transition-all cursor-pointer"
+            >
+              <Shield className="h-4 w-4 text-zinc-400" />
+              <span>Efetivo de Agentes</span>
+            </button>
 
-            {/* Lista */}
-            <div className="flex-1 space-y-2.5">
-              {abaAtiva === 'equipamentos' ? (
-                equipamentosFiltrados.length === 0 ? (
-                  <p className="py-8 text-center font-mono text-xs text-zinc-500">
-                    Nenhum equipamento encontrado.
-                  </p>
-                ) : (
-                  equipamentosFiltrados.map((item) => {
-                    const falha = item.situacao.toLowerCase() === 'mau_funcionamento';
-                    return (
-                      <div
-                        key={item.id}
-                        className={`flex gap-3 rounded-lg border p-3 text-xs transition-all ${falha
-                          ? 'border-red-500/40 bg-red-950/20'
-                          : 'border-zinc-800 bg-zinc-950 hover:border-zinc-700'
-                          }`}
-                      >
-                        {item.urlImagem ? (
-                          <img
-                            src={item.urlImagem}
-                            alt={item.numeroSerie ?? `Equipamento ${item.id}`}
-                            className="h-12 w-12 shrink-0 rounded-md object-cover"
-                          />
-                        ) : (
-                          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-md bg-zinc-800 text-cyan-400">
-                            <Video className="h-6 w-6" />
-                          </div>
-                        )}
-                        <div className="min-w-0 flex-1">
-                          <div className="mb-1 flex items-center justify-between gap-2">
-                            <span className="truncate font-mono font-semibold text-zinc-200">
-                              {item.numeroSerie ?? `Equipamento #${item.id}`}
-                            </span>
-                            <span
-                              className={`shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] font-semibold uppercase ${classeSituacaoEquip(item.situacao)}`}
-                            >
-                              {item.situacao}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-1.5 text-[11px] text-zinc-400">
-                            <MapPin className="h-3 w-3 text-zinc-500" />
-                            {temCoordenadas(item) ? (
-                              <span>
-                                {item.latitude.toFixed(4)}, {item.longitude.toFixed(4)}
-                              </span>
-                            ) : (
-                              <span className="italic text-zinc-500">Sem coordenadas</span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })
-                )
-              ) : agentesFiltrados.length === 0 ? (
-                <p className="py-8 text-center font-mono text-xs text-zinc-500">
-                  Nenhum agente encontrado.
-                </p>
-              ) : (
-                agentesFiltrados.map((item) => (
-                  <div
-                    key={item.id}
-                    className="flex gap-3 rounded-lg border border-zinc-800 bg-zinc-950 p-3 text-xs transition-all hover:border-zinc-700"
-                  >
-                    {item.urlFoto ? (
-                      <img
-                        src={item.urlFoto}
-                        alt={item.nome}
-                        className="h-12 w-12 shrink-0 rounded-full object-cover"
-                      />
-                    ) : (
-                      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-zinc-800 text-yellow-400">
-                        <User className="h-6 w-6" />
-                      </div>
-                    )}
-                    <div className="min-w-0 flex-1">
-                      <div className="mb-1 flex items-center justify-between gap-2">
-                        <span className="truncate font-semibold text-zinc-200">{item.nome}</span>
-                        <span className="shrink-0 rounded border border-yellow-500/30 bg-yellow-500/10 px-1.5 py-0.5 font-mono text-[10px] font-semibold uppercase text-yellow-400">
-                          {item.situacao}
-                        </span>
-                      </div>
-                      <div className="font-mono text-[11px] text-zinc-400">
-                        Matrícula: {item.matricula}
-                      </div>
-                      <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-zinc-400">
-                        <MapPin className="h-3 w-3 text-zinc-500" />
-                        {temCoordenadas(item) ? (
-                          <span>
-                            {item.latitude.toFixed(4)}, {item.longitude.toFixed(4)}
-                          </span>
-                        ) : (
-                          <span className="italic text-zinc-500">Sem sinal GPS</span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        )}
-      </aside>
+            <button
+              onClick={() => navigate('/inteligencia')}
+              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-r-md text-xs font-mono tracking-wider transition-all cursor-pointer ${modoHeatmap
+                ? 'text-orange-300 bg-orange-950/30 border-l-4 border-orange-500 font-semibold'
+                : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/60'
+                }`}
+            >
+              <Cpu className="h-4 w-4 text-orange-400" />
+              <span>Inteligência Preditiva</span>
+            </button>
 
-      {/* Área do Mapa */}
-      <main className="relative h-full flex-1">
-        {/* Botão recolher/exibir sidebar */}
-        <button
-          onClick={() => setIsSidebarOpen((prev) => !prev)}
-          title={isSidebarOpen ? 'Recolher painel' : 'Exibir painel'}
-          className="absolute left-0 top-4 z-[1000] flex h-9 w-7 items-center justify-center rounded-r-md border border-l-0 border-zinc-700 bg-zinc-900/90 text-zinc-300 shadow-lg backdrop-blur transition-colors hover:bg-zinc-800 hover:text-white cursor-pointer"
-        >
-          {isSidebarOpen ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-        </button>
-
-        {/* Barra Superior de Indicadores */}
-        <div className="absolute left-1/2 top-4 z-[1000] flex -translate-x-1/2 flex-wrap justify-center gap-4">
-          <div className="flex items-center gap-3 rounded-xl border border-zinc-700/60 bg-zinc-900/80 px-4 py-2 shadow-2xl backdrop-blur">
-            <Radio className="h-5 w-5 text-cyan-400" />
-            <div>
-              <p className="font-mono text-[10px] uppercase tracking-wider text-zinc-400">Equipamentos</p>
-              <p className="font-mono text-base font-bold text-zinc-100">{equipamentos.length}</p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3 rounded-xl border border-zinc-700/60 bg-zinc-900/80 px-4 py-2 shadow-2xl backdrop-blur">
-            <Users className="h-5 w-5 text-yellow-400" />
-            <div>
-              <p className="font-mono text-[10px] uppercase tracking-wider text-zinc-400">Agentes</p>
-              <p className="font-mono text-base font-bold text-zinc-100">{agentes.length}</p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3 rounded-xl border border-zinc-700/60 bg-zinc-900/80 px-4 py-2 shadow-2xl backdrop-blur">
-            <CheckCircle2 className="h-5 w-5 text-blue-400" />
-            <div>
-              <p className="font-mono text-[10px] uppercase tracking-wider text-zinc-400">Operacionais</p>
-              <p className="font-mono text-base font-bold text-blue-400">{operacionais}</p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3 rounded-xl border border-zinc-700/60 bg-zinc-900/80 px-4 py-2 shadow-2xl backdrop-blur">
-            <ShieldCheck className="h-5 w-5 text-emerald-400" />
-            <div>
-              <p className="font-mono text-[10px] uppercase tracking-wider text-zinc-400">Agentes Ativos</p>
-              <p className="font-mono text-base font-bold text-emerald-400">{agentesAtivos}</p>
-            </div>
-          </div>
-
-          <button
-            onClick={() => setModoHeatmap((prev) => !prev)}
-            className={`flex items-center gap-2 rounded-xl border px-4 py-2 font-mono text-xs font-bold uppercase tracking-wider shadow-2xl backdrop-blur transition-all cursor-pointer ${modoHeatmap
-              ? 'border-orange-500/60 bg-orange-500/20 text-orange-300 shadow-[0_0_20px_rgba(249,115,22,0.35)]'
-              : 'border-zinc-700/60 bg-zinc-900/80 text-zinc-200 hover:bg-zinc-800'
-              }`}
-          >
-            {modoHeatmap ? <Flame className="h-4 w-4" /> : <MapIcon className="h-4 w-4" />}
-            {modoHeatmap ? 'Mapa de Calor' : 'Visão Padrão'}
-          </button>
+            <button
+              onClick={() => navigate('/crises')}
+              className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-r-md text-xs font-mono tracking-wider text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/60 transition-all cursor-pointer"
+            >
+              <Siren className="h-4 w-4 text-red-400" />
+              <span>Gestão de Crises</span>
+            </button>
+          </nav>
         </div>
 
-        <MapContainer center={[-21.9348, -50.5146]} zoom={14} style={{ height: '100%', width: '100%' }}>
+        {/* Footer da Sidebar */}
+        <div className="p-4 border-t border-zinc-800/60 text-[10px] font-mono text-zinc-500">
+          <div className="flex items-center justify-between mb-1">
+            <span>CANAL TELEMETRIA</span>
+            <span className="text-cyan-400 font-bold tracking-wider">ENCRYPTED</span>
+          </div>
+          <div className="flex items-center gap-1.5 text-zinc-400">
+            <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse"></span>
+            <span>LINK TÁTICO SAT-09 ATIVO</span>
+          </div>
+        </div>
+      </aside>
+
+      {/* 2. ÁREA CENTRAL DO MAPA */}
+      <main className="flex-1 relative h-full w-full overflow-hidden">
+        {/* Faixa Superior: Status Bar Tática */}
+        <div className="absolute top-3 left-4 right-4 z-[1000] flex items-center justify-between pointer-events-none">
+          {/* Indicadores de Estado Tático */}
+          <div className="flex items-center gap-3 pointer-events-auto">
+            <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-[#0a1017]/90 border border-cyan-900/60 text-cyan-400 text-[11px] font-mono backdrop-blur-md shadow-lg">
+              <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
+              <span className="font-semibold tracking-wider">DEFCON 4 - ESTÁVEL</span>
+            </div>
+
+            <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#0a1017]/90 border border-zinc-800 text-cyan-300 text-[11px] font-mono backdrop-blur-md shadow-lg">
+              <Wifi className="h-3.5 w-3.5 text-cyan-400" />
+              <span>IOT LATENCY:</span>
+              <span className="text-white font-bold">12ms</span>
+            </div>
+
+            <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#0a1017]/90 border border-zinc-800 text-zinc-300 text-[11px] font-mono backdrop-blur-md shadow-lg">
+              <Clock className="h-3.5 w-3.5 text-zinc-400" />
+              <span>{utcTime} UTC</span>
+            </div>
+          </div>
+
+          {/* Identificação do Operador */}
+          <div className="flex items-center gap-3 px-3 py-1 rounded-full bg-[#0a1017]/90 border border-zinc-800 backdrop-blur-md shadow-lg pointer-events-auto">
+            <div className="text-right">
+              <div className="text-xs font-semibold text-white tracking-wide">Cmdte. R. Vance</div>
+              <div className="text-[10px] font-mono text-zinc-400">CCO Central</div>
+            </div>
+            <div className="w-7 h-7 rounded-full bg-cyan-900/40 border border-cyan-400/50 flex items-center justify-center text-cyan-300 text-xs font-bold font-mono">
+              RV
+            </div>
+          </div>
+        </div>
+
+        {/* 3. BARRA FLUTUANTE DE KPIs (CENTRALIZADA) */}
+        <div className="absolute top-14 left-1/2 -translate-x-1/2 z-[1000] flex items-center gap-5 bg-[#0a1018]/92 border border-cyan-900/50 rounded-xl px-5 py-3 shadow-[0_8px_32px_rgba(0,0,0,0.8)] backdrop-blur-md pointer-events-auto">
+          {/* KPI 1: Equipamentos */}
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-cyan-950/60 border border-cyan-800/40 flex items-center justify-center text-cyan-400">
+              <Radio className="h-4 w-4" />
+            </div>
+            <div>
+              <div className="text-[9px] font-mono uppercase text-zinc-400 tracking-wider">
+                Equipamentos Ativos
+              </div>
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-base font-bold font-mono text-white">
+                  {operacionais > 0 ? operacionais : totalEquipamentos}
+                </span>
+                <span className="text-[11px] font-mono text-zinc-500">
+                  / {totalEquipamentos || 1500}
+                </span>
+                <span className="text-[10px] font-mono font-bold text-cyan-400 bg-cyan-950/80 px-1.5 py-0.2 rounded border border-cyan-800/40">
+                  {taxaDisponibilidade}%
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="h-8 w-px bg-zinc-800"></div>
+
+          {/* KPI 2: Agentes */}
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-yellow-950/60 border border-yellow-800/40 flex items-center justify-center text-yellow-400">
+              <Shield className="h-4 w-4" />
+            </div>
+            <div>
+              <div className="text-[9px] font-mono uppercase text-zinc-400 tracking-wider">
+                Agentes em Campo
+              </div>
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-base font-bold font-mono text-white">
+                  {agentesAtivos || 64}
+                </span>
+                <span className="text-[11px] font-mono text-zinc-400">Operativos</span>
+                <span className="text-[10px] font-mono font-semibold text-yellow-400 bg-yellow-950/60 px-1.5 py-0.2 rounded border border-yellow-800/40">
+                  12 Viaturas
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="h-8 w-px bg-zinc-800"></div>
+
+          {/* KPI 3: % Disponibilidade */}
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-indigo-950/60 border border-indigo-800/40 flex items-center justify-center text-indigo-400">
+              <Cpu className="h-4 w-4" />
+            </div>
+            <div>
+              <div className="text-[9px] font-mono uppercase text-zinc-400 tracking-wider">
+                % Disponibilidade Malha
+              </div>
+              <div className="flex items-baseline gap-1.5">
+                <span className="text-base font-bold font-mono text-white">
+                  {taxaDisponibilidade}%
+                </span>
+                <span className="text-[9px] font-mono uppercase text-zinc-400">
+                  UPTIME SAT-MESH
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="h-8 w-px bg-zinc-800"></div>
+
+          {/* Toggle Switch: Mapa Térmico */}
+          <div className="flex items-center gap-3">
+            <div className="text-[10px] font-mono font-bold leading-tight text-right text-cyan-300">
+              MAPA TÉRMICO
+              <br />
+              <span className={modoHeatmap ? 'text-cyan-400' : 'text-zinc-500'}>
+                {modoHeatmap ? 'ATIVO' : 'INATIVO'}
+              </span>
+            </div>
+
+            <button
+              onClick={() => setModoHeatmap(!modoHeatmap)}
+              className={`w-11 h-6 flex items-center rounded-full p-1 cursor-pointer transition-colors duration-300 ${modoHeatmap
+                ? 'bg-cyan-500 shadow-[0_0_12px_#22d3ee]'
+                : 'bg-zinc-800 border border-zinc-700'
+                }`}
+            >
+              <div
+                className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform duration-300 ${modoHeatmap ? 'translate-x-5' : 'translate-x-0'
+                  }`}
+              />
+            </button>
+          </div>
+
+          <div className="h-8 w-px bg-zinc-800"></div>
+
+          {/* Toggle: Widgets Inferiores */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setMostrarWidgets(!mostrarWidgets)}
+              title={mostrarWidgets ? 'Ocultar Painéis Inferiores' : 'Exibir Painéis Inferiores'}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-[10px] font-mono font-bold cursor-pointer transition-all duration-300 ${mostrarWidgets
+                ? 'bg-cyan-950/70 border-cyan-500/50 text-cyan-300 shadow-[0_0_10px_rgba(34,211,238,0.25)]'
+                : 'bg-zinc-900 border-zinc-700 text-zinc-400 hover:text-zinc-200'
+                }`}
+            >
+              {mostrarWidgets ? (
+                <Eye className="h-3.5 w-3.5 text-cyan-400" />
+              ) : (
+                <EyeOff className="h-3.5 w-3.5 text-zinc-500" />
+              )}
+              <span>WIDGETS</span>
+              <span
+                className={`w-2 h-2 rounded-full ${mostrarWidgets ? 'bg-cyan-400 shadow-[0_0_6px_#22d3ee]' : 'bg-zinc-600'
+                  }`}
+              />
+            </button>
+          </div>
+
+          <div className="h-8 w-px bg-zinc-800"></div>
+
+          {/* Filtros rápidos visuais */}
+          <div className="flex items-center gap-2 text-[10px] font-mono text-zinc-400">
+            <span className="flex items-center gap-1 bg-zinc-900/90 px-2 py-1 rounded border border-zinc-800 text-zinc-300">
+              <span className="w-1.5 h-1.5 rounded-full bg-cyan-400"></span> Semáforos
+            </span>
+            <span className="flex items-center gap-1 bg-zinc-900/90 px-2 py-1 rounded border border-zinc-800 text-zinc-300">
+              <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span> Câmeras OCR
+            </span>
+            <span className="flex items-center gap-1 bg-zinc-900/90 px-2 py-1 rounded border border-zinc-800 text-zinc-300">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span> Meteorologia
+            </span>
+          </div>
+        </div>
+
+        {/* 4. MAPA LEAFLET COM ESTILO DARK TÁTICO */}
+        <MapContainer
+          center={[-21.9348, -50.5146]}
+          zoom={14}
+          zoomControl={false}
+          style={{ height: '100%', width: '100%', background: '#090d12' }}
+        >
+          <MapFlyTo lat={focoLat} lng={focoLng} />
+          <MapController coordenadaFoco={focoMapa} />
+          {/* Basemap Dark Matter CartoDB (Público sem API Key) */}
           <TileLayer
-            attribution="&copy; OpenStreetMap"
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            className="mapa-cyberpunk"
           />
 
+          {/* Renderização do Heatmap quando ativado */}
           {modoHeatmap && <HeatmapLayer pontos={pontosHeatmap} />}
 
+          {/* Marcadores de Equipamentos */}
           {!modoHeatmap &&
-            equipamentos.map(
-              (e) =>
-                temCoordenadas(e) && (
-                  <Marker
-                    key={`eq-${e.id}`}
-                    position={[e.latitude, e.longitude]}
-                    icon={iconePorSituacao(e.situacao)}
-                  >
-                    <Popup>
-                      <div className="min-w-[230px] max-w-[290px] p-1 text-zinc-900">
-                        <div className="mb-2 border-b pb-1.5">
-                          <strong className="text-sm font-semibold">
-                            {e.numeroSerie ?? `Equipamento #${e.id}`}
-                          </strong>
-                        </div>
+            equipamentos.map((e) => {
+              if (!temCoordenadas(e)) return null;
+              const isFalha = e.situacao.toLowerCase() === 'mau_funcionamento';
+              const icon = isFalha
+                ? criarPinAlerta(e.numeroSerie ?? `#${e.id}`)
+                : e.situacao.toLowerCase() === 'operacional'
+                  ? PIN_OPERACIONAL
+                  : PIN_DESATIVADO;
 
-                        <div className="space-y-1 text-xs text-zinc-700">
-                          <div>
-                            <span className="font-semibold text-zinc-800">Nº Série: </span>
-                            <span className="font-mono">{e.numeroSerie ?? 'Não informado'}</span>
-                          </div>
-                          <div>
-                            <span className="font-semibold text-zinc-800">Situação: </span>
-                            <span
-                              className={
-                                e.situacao.toLowerCase() === 'mau_funcionamento'
-                                  ? 'font-bold text-red-600'
-                                  : e.situacao.toLowerCase() === 'operacional'
-                                    ? 'font-bold text-blue-600'
-                                    : ''
-                              }
-                            >
-                              {e.situacao}
-                            </span>
-                          </div>
-                          <div>
-                            <span className="font-semibold text-zinc-800">Órgão: </span>
-                            <span>{e.orgaoId != null ? `#${e.orgaoId}` : 'Não vinculado'}</span>
-                          </div>
-                          {e.dataProximaManutencao && (
-                            <div>
-                              <span className="font-semibold text-zinc-800">Próxima manutenção: </span>
-                              <span>{new Date(e.dataProximaManutencao).toLocaleDateString()}</span>
-                            </div>
-                          )}
-                          {e.caracteristicasEspecificas &&
-                            Object.keys(e.caracteristicasEspecificas).length > 0 && (
-                              <div className="mt-2 border-t border-zinc-200 pt-1">
-                                <span className="mb-1 block text-[11px] font-semibold text-zinc-800">
-                                  Características:
-                                </span>
-                                <div className="max-h-20 overflow-y-auto rounded bg-zinc-100 p-1.5 font-mono text-[10px] text-zinc-800">
-                                  {Object.entries(e.caracteristicasEspecificas).map(([chave, valor]) => (
-                                    <div key={chave} className="truncate">
-                                      <strong>{chave}:</strong> {String(valor)}
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-                        </div>
-
-                        <button
-                          onClick={() => abrirFeed(e.latitude, e.longitude)}
-                          className="mt-3 flex w-full items-center justify-center gap-1.5 rounded bg-zinc-900 px-2 py-1.5 text-[11px] font-semibold text-cyan-300 hover:bg-zinc-800 cursor-pointer"
+              return (
+                <Marker key={`eq-${e.id}`} position={[e.latitude, e.longitude]} icon={icon}>
+                  <Popup>
+                    <div className="min-w-[240px] p-1.5 text-zinc-900 font-sans">
+                      <div className="flex items-center justify-between border-b pb-1.5 mb-2">
+                        <strong className="text-sm font-mono font-bold text-zinc-900">
+                          {e.numeroSerie ?? `Equipamento #${e.id}`}
+                        </strong>
+                        <span
+                          className={`text-[10px] font-mono px-1.5 py-0.5 rounded font-bold uppercase ${isFalha ? 'bg-red-100 text-red-600' : 'bg-cyan-100 text-cyan-700'
+                            }`}
                         >
-                          <Eye className="h-3.5 w-3.5" /> Visualizar Feed da Câmera
-                        </button>
+                          {e.situacao}
+                        </span>
+                      </div>
 
-                        <div className="mt-2 flex items-center justify-end gap-2 border-t border-zinc-200 pt-2">
-                          <button
-                            onClick={() => {
-                              setItemEmEdicao(e);
-                              setIsEquipModalOpen(true);
-                            }}
-                            className="flex items-center gap-1 rounded bg-zinc-100 px-2 py-1 text-[11px] font-medium text-zinc-700 hover:bg-zinc-200 cursor-pointer"
-                          >
-                            <Edit2 className="h-3 w-3" /> Editar
-                          </button>
-                          <button
-                            onClick={() => handleExcluir('equipamento', e.id)}
-                            className="flex items-center gap-1 rounded bg-red-50 px-2 py-1 text-[11px] font-medium text-red-600 hover:bg-red-100 cursor-pointer"
-                          >
-                            <Trash2 className="h-3 w-3" /> Excluir
-                          </button>
+                      <div className="space-y-1 text-xs text-zinc-700 font-mono">
+                        <div>
+                          <span className="text-zinc-500">Órgão: </span>
+                          <span>{e.orgaoId ? `#${e.orgaoId}` : 'Não vinculado'}</span>
+                        </div>
+                        {e.dataProximaManutencao && (
+                          <div>
+                            <span className="text-zinc-500">Manutenção: </span>
+                            <span>{new Date(e.dataProximaManutencao).toLocaleDateString()}</span>
+                          </div>
+                        )}
+                        <div>
+                          <span className="text-zinc-500">Coord: </span>
+                          <span>
+                            {e.latitude.toFixed(4)}, {e.longitude.toFixed(4)}
+                          </span>
                         </div>
                       </div>
-                    </Popup>
-                  </Marker>
-                ),
-            )}
 
+                      <button
+                        onClick={() => abrirFeed(e.latitude, e.longitude)}
+                        className="mt-3 flex w-full items-center justify-center gap-1.5 rounded bg-zinc-900 px-2 py-1.5 text-[11px] font-mono font-semibold text-cyan-300 hover:bg-zinc-800 cursor-pointer"
+                      >
+                        <Eye className="h-3.5 w-3.5" /> Visualizar Feed da Câmera
+                      </button>
+
+                      <div className="mt-2 border-t border-zinc-200 pt-2">
+                        <button
+                          onClick={() => {
+                            setItemEmEdicao(e);
+                            setIsEquipModalOpen(true);
+                          }}
+                          className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-cyan-900/40 border border-cyan-500/50 py-2 text-xs font-mono font-bold text-cyan-300 hover:bg-cyan-900/70 hover:text-cyan-200 transition-all cursor-pointer shadow-[0_0_8px_rgba(6,182,212,0.2)]"
+                        >
+                          <Crosshair className="h-3.5 w-3.5 text-cyan-400" />
+                          <span>Atualização Rápida</span>
+                        </button>
+                      </div>
+                    </div>
+                  </Popup>
+                </Marker>
+              );
+            })}
+
+          {/* Marcadores de Agentes */}
           {!modoHeatmap &&
             agentes.map(
               (a) =>
                 temCoordenadas(a) && (
-                  <Marker key={`ag-${a.id}`} position={[a.latitude, a.longitude]} icon={ICONE_AGENTE}>
+                  <Marker
+                    key={`ag-${a.id}`}
+                    position={[a.latitude, a.longitude]}
+                    icon={PIN_AGENTE}
+                  >
                     <Popup>
-                      <div className="min-w-[200px] max-w-[260px] p-1 text-zinc-900">
-                        <div className="mb-2 border-b pb-1.5">
+                      <div className="min-w-[200px] p-1.5 text-zinc-900 font-sans">
+                        <div className="border-b pb-1.5 mb-2">
                           <strong className="text-sm font-semibold">{a.nome}</strong>
-                        </div>
-                        <div className="space-y-1 text-xs text-zinc-700">
-                          <div>
-                            <span className="font-semibold text-zinc-800">Matrícula: </span>
-                            <span className="font-mono">{a.matricula}</span>
-                          </div>
-                          <div>
-                            <span className="font-semibold text-zinc-800">Situação: </span>
-                            <span>{a.situacao}</span>
-                          </div>
-                          <div>
-                            <span className="font-semibold text-zinc-800">Tipo Agente ID: </span>
-                            <span className="font-mono">#{a.tipoAgenteId}</span>
+                          <div className="text-[10px] font-mono text-zinc-500">
+                            Matrícula: {a.matricula}
                           </div>
                         </div>
-                        <div className="mt-3 flex items-center justify-end gap-2 border-t border-zinc-200 pt-2">
+
+                        <div className="space-y-1 text-xs text-zinc-700 font-mono">
+                          <div>
+                            <span className="text-zinc-500">Situação: </span>
+                            <span className="font-semibold">{a.situacao}</span>
+                          </div>
+                          <div>
+                            <span className="text-zinc-500">Tipo Agente: </span>
+                            <span>#{a.tipoAgenteId}</span>
+                          </div>
+                        </div>
+
+                        <div className="mt-3 border-t border-zinc-200 pt-2">
                           <button
                             onClick={() => {
                               setItemEmEdicao(a);
                               setIsAgenteModalOpen(true);
                             }}
-                            className="flex items-center gap-1 rounded bg-zinc-100 px-2 py-1 text-[11px] font-medium text-zinc-700 hover:bg-zinc-200 cursor-pointer"
+                            className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-cyan-900/40 border border-cyan-500/50 py-2 text-xs font-mono font-bold text-cyan-300 hover:bg-cyan-900/70 hover:text-cyan-200 transition-all cursor-pointer shadow-[0_0_8px_rgba(6,182,212,0.2)]"
                           >
-                            <Edit2 className="h-3 w-3" /> Editar
-                          </button>
-                          <button
-                            onClick={() => handleExcluir('agente', a.id)}
-                            className="flex items-center gap-1 rounded bg-red-50 px-2 py-1 text-[11px] font-medium text-red-600 hover:bg-red-100 cursor-pointer"
-                          >
-                            <Trash2 className="h-3 w-3" /> Excluir
+                            <Crosshair className="h-3.5 w-3.5 text-cyan-400" />
+                            <span>Atualização Rápida</span>
                           </button>
                         </div>
                       </div>
@@ -684,9 +846,306 @@ export default function Dashboard() {
                 ),
             )}
         </MapContainer>
+
+        {/* 5 e 6: PAINÉIS FLUTUANTES INFERIORES CONDICIONAIS */}
+        {mostrarWidgets && (
+          <>
+            {/* 5. WIDGET FLUTUANTE INFERIOR ESQUERDO: TELEMETRIA SETORIAL */}
+            <div className="absolute bottom-5 left-5 z-[1000] w-80 bg-[#0a1018]/94 border border-cyan-900/40 rounded-xl p-4 shadow-[0_8px_32px_rgba(0,0,0,0.8)] backdrop-blur-md pointer-events-auto">
+              {/* Header */}
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <Radio className="h-4 w-4 text-cyan-400" />
+                  <span className="text-xs font-mono font-bold text-white tracking-wider">
+                    Telemetria Setorial
+                  </span>
+                </div>
+                <span className="text-[9px] font-mono text-zinc-400 bg-zinc-800/80 px-2 py-0.5 rounded border border-zinc-700/60 font-semibold">
+                  HISTÓRICO 6H
+                </span>
+              </div>
+
+              {/* Legenda */}
+              <div className="flex items-center gap-4 text-[10px] font-mono text-zinc-400 mb-2">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-sm bg-cyan-400"></span> Densidade Tráfego
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-sm bg-orange-400"></span> Índice Térmico
+                </span>
+              </div>
+
+              {/* Gráfico Vetorial Cyber */}
+              <div className="relative py-1">
+                <svg viewBox="0 0 280 80" className="w-full h-16 overflow-visible">
+                  <defs>
+                    <linearGradient id="cyanGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#22d3ee" stopOpacity="0.35" />
+                      <stop offset="100%" stopColor="#22d3ee" stopOpacity="0" />
+                    </linearGradient>
+                  </defs>
+                  {/* Área sombreada */}
+                  <path
+                    d="M 0 72 Q 70 68, 110 52 T 190 28 T 280 42 L 280 80 L 0 80 Z"
+                    fill="url(#cyanGrad)"
+                  />
+                  {/* Linha Ciano Tráfego */}
+                  <path
+                    d="M 0 72 Q 70 68, 110 52 T 190 28 T 280 42"
+                    fill="none"
+                    stroke="#22d3ee"
+                    strokeWidth="2.5"
+                  />
+                  {/* Linha Laranja Índice Térmico Tracejada */}
+                  <path
+                    d="M 0 76 Q 80 74, 130 62 T 220 56 T 280 50"
+                    fill="none"
+                    stroke="#f97316"
+                    strokeWidth="2"
+                    strokeDasharray="4 3"
+                  />
+                  {/* Ponto atual ciano */}
+                  <circle cx="280" cy="42" r="3.5" fill="#22d3ee" stroke="#ffffff" strokeWidth="1.5" />
+                  <circle cx="280" cy="50" r="3" fill="#f97316" stroke="#ffffff" strokeWidth="1" />
+                </svg>
+
+                <div className="text-right text-[10px] font-mono font-bold text-cyan-400 mt-1">
+                  FLUXO CRÍTICO: <span className="text-white">+38%</span>
+                </div>
+              </div>
+
+              {/* Métricas do Setor */}
+              <div className="mt-3 pt-2.5 border-t border-zinc-800/80 flex items-center justify-between text-xs font-mono">
+                <div>
+                  <div className="text-[9px] text-zinc-500 uppercase">Poluição Particulada</div>
+                  <div className="font-bold text-white">38.2 µg/m³</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-[9px] text-zinc-500 uppercase">Vento / Azimute</div>
+                  <div className="font-bold text-cyan-300">14.8 kt • 192°</div>
+                </div>
+              </div>
+            </div>
+
+            {/* 6. WIDGET FLUTUANTE INFERIOR DIREITO: ÚLTIMOS ALERTAS IA */}
+            <div className="absolute bottom-5 right-5 z-[1000] w-96 max-h-[460px] bg-[#0a1018]/96 border border-cyan-900/50 rounded-xl p-4 shadow-[0_8px_32px_rgba(0,0,0,0.85)] backdrop-blur-md flex flex-col pointer-events-auto">
+              {/* Header */}
+              <div className="flex items-center justify-between border-b border-zinc-800/80 pb-2.5 mb-3">
+                <div className="flex items-center gap-2">
+                  <Flame className="h-4 w-4 text-red-500" />
+                  <span className="text-xs font-mono font-bold text-white tracking-wider uppercase">
+                    Últimos Alertas IA
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-red-950/60 border border-red-800/60 text-[9px] font-mono font-bold text-red-400">
+                  <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-ping"></span>
+                  LIVE FEED
+                </div>
+              </div>
+
+              {/* Lista de Alertas */}
+              <div className="flex-1 overflow-y-auto space-y-2.5 pr-1 text-xs">
+                {listaAlertasRender.map((alerta) => {
+                  if (alerta.tipo === 'critico') {
+                    return (
+                      <div
+                        key={alerta.id}
+                        className="rounded-lg border border-red-500/50 bg-red-950/20 p-2.5 space-y-1.5 transition-all hover:border-red-400"
+                      >
+                        <div className="flex items-center justify-between text-[10px] font-mono">
+                          <span className="flex items-center gap-1 text-red-400 font-bold">
+                            <AlertTriangle className="h-3 w-3" />
+                            {alerta.origem}
+                          </span>
+                          <span className="px-1.5 py-0.2 rounded bg-red-600 text-white font-bold tracking-wider uppercase">
+                            Alta Severidade
+                          </span>
+                        </div>
+
+                        <p className="text-xs font-semibold text-zinc-100 leading-snug">
+                          {alerta.titulo}
+                        </p>
+
+                        <div className="text-[10px] font-mono text-zinc-400 flex items-center justify-between">
+                          <span>{alerta.subtexto || `Probabilidade: ${alerta.probabilidade}%`}</span>
+                          <span>{alerta.tempo}</span>
+                        </div>
+
+                        <div className="pt-1 flex items-center gap-2">
+                          <button
+                            onClick={() => navigate('/?lat=' + alerta.latitude + '&lng=' + alerta.longitude)}
+                            className="flex-1 flex items-center justify-center gap-1 py-1 rounded bg-zinc-900 border border-zinc-700 text-[10px] font-mono text-zinc-300 hover:text-white cursor-pointer"
+                          >
+                            <Maximize2 className="h-3 w-3" /> Focar no Mapa
+                          </button>
+                          <button
+                            onClick={() => {
+                              setDespachoModal({ isOpen: true, alerta });
+                              setAgenteSelecionado('');
+                            }}
+                            className="flex-1 flex items-center justify-center gap-1 py-1 rounded bg-red-600 hover:bg-red-500 text-white text-[10px] font-mono font-bold cursor-pointer shadow-[0_0_10px_rgba(239,68,68,0.4)]"
+                          >
+                            <Send className="h-3 w-3" /> Despachar Agente
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  if (alerta.tipo === 'atencao') {
+                    return (
+                      <div
+                        key={alerta.id}
+                        className="rounded-lg border border-yellow-500/40 bg-yellow-950/20 p-2.5 space-y-1.5 transition-all hover:border-yellow-400"
+                      >
+                        <div className="flex items-center justify-between text-[10px] font-mono">
+                          <span className="text-yellow-400 font-bold">{alerta.origem}</span>
+                          <span className="px-1.5 py-0.2 rounded bg-yellow-500/80 text-black font-bold uppercase">
+                            Atenção
+                          </span>
+                        </div>
+                        <p className="text-xs text-zinc-200 font-medium">{alerta.titulo}</p>
+                        <div className="text-[10px] font-mono text-zinc-400 flex items-center justify-between">
+                          <span>{alerta.subtexto}</span>
+                          <span>{alerta.tempo}</span>
+                        </div>
+                        <div className="pt-1 flex items-center justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              mostrarToast('Ajuste Semafórico Preditivo Aplicado!');
+                              setAlertasIA((prev) => prev.filter((a) => a.id !== alerta.id));
+                            }}
+                            className="px-2 py-0.5 rounded bg-yellow-500 hover:bg-yellow-400 text-black text-[10px] font-mono font-bold cursor-pointer transition-all"
+                          >
+                            Aplicar Ajuste Semafórico
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div
+                      key={alerta.id}
+                      className="rounded-lg border border-cyan-800/40 bg-cyan-950/20 p-2.5 space-y-1.5"
+                    >
+                      <div className="flex items-center justify-between text-[10px] font-mono">
+                        <span className="text-cyan-400 font-bold">{alerta.origem}</span>
+                        <span className="text-[9px] font-mono text-cyan-400 bg-cyan-950 px-1 rounded border border-cyan-800">
+                          SISTEMA
+                        </span>
+                      </div>
+                      <p className="text-xs text-zinc-300 font-medium">{alerta.titulo}</p>
+                      <div className="pt-1 flex items-center justify-end">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            mostrarToast('Alerta de telemetria arquivado.');
+                            setAlertasIA((prev) => prev.filter((a) => a.id !== alerta.id));
+                          }}
+                          className="px-2 py-0.5 rounded bg-zinc-900 border border-zinc-700 hover:border-zinc-500 text-cyan-300 text-[10px] font-mono cursor-pointer transition-all"
+                        >
+                          Dispensar
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {listaAlertasRender.length === 0 && (
+                  <div className="py-8 text-center text-xs font-mono text-emerald-400 flex flex-col items-center gap-2">
+                    <CheckCircle className="h-6 w-6 text-emerald-400 animate-pulse" />
+                    <span>Nenhum alerta ativo na fila. Malha operacional estável.</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Barra de Coordenadas Inferior */}
+              <div className="mt-2.5 pt-2 border-t border-zinc-800/80 flex items-center justify-between text-[9px] font-mono text-zinc-500">
+                <span className="text-cyan-400">● LAT: -21.9348</span>
+                <span>LON: -50.5146</span>
+                <span>ALT: 760m</span>
+                <span>WGS-84</span>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* 7. DRAWER LATERAL DE INVENTÁRIO (QUANDO CLICADO NO MENU) */}
+        {isInventarioDrawerOpen && (
+          <div className="absolute top-0 left-0 bottom-0 z-[1050] w-96 bg-[#0a0e14]/98 border-r border-cyan-900/60 p-5 shadow-2xl backdrop-blur-md flex flex-col pointer-events-auto">
+            <div className="flex items-center justify-between border-b border-zinc-800 pb-3 mb-4">
+              <h2 className="text-sm font-mono font-bold text-cyan-400 tracking-wider">
+                INVENTÁRIO DE EQUIPAMENTOS
+              </h2>
+              <button
+                onClick={() => setIsInventarioDrawerOpen(false)}
+                className="text-zinc-400 hover:text-white cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Filtros */}
+            <div className="space-y-2 mb-4">
+              <div className="relative">
+                <Search className="absolute left-3 top-2.5 h-4 w-4 text-zinc-500" />
+                <input
+                  type="text"
+                  value={termoBusca}
+                  onChange={(e) => setTermoBusca(e.target.value)}
+                  placeholder="Filtrar por serial ou ID..."
+                  className="w-full rounded-md border border-zinc-800 bg-zinc-950 py-2 pl-9 pr-3 text-xs text-zinc-200 placeholder-zinc-500 focus:border-cyan-500 focus:outline-none"
+                />
+              </div>
+
+              <select
+                value={filtroSituacao}
+                onChange={(e) => setFiltroSituacao(e.target.value)}
+                className="w-full rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2 text-xs text-zinc-300 focus:border-cyan-500 focus:outline-none"
+              >
+                <option value="todos">Todas as Situações</option>
+                <option value="operacional">Operacional</option>
+                <option value="mau_funcionamento">Mau Funcionamento</option>
+                <option value="manutencao">Manutenção</option>
+                <option value="desativado">Desativado</option>
+              </select>
+            </div>
+
+            {/* Lista com scroll */}
+            <div className="flex-1 overflow-y-auto space-y-2 pr-1 text-xs">
+              {equipamentosFiltrados.map((item) => (
+                <div
+                  key={item.id}
+                  className="rounded-lg border border-zinc-800 bg-zinc-950 p-3 hover:border-cyan-700/60 transition-all"
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-mono font-semibold text-zinc-200">
+                      {item.numeroSerie ?? `Equipamento #${item.id}`}
+                    </span>
+                    <span
+                      className={`text-[10px] font-mono px-1.5 py-0.5 rounded uppercase ${item.situacao === 'mau_funcionamento'
+                        ? 'bg-red-500/20 text-red-400 border border-red-500/40'
+                        : 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/30'
+                        }`}
+                    >
+                      {item.situacao}
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-zinc-400 font-mono">
+                    {temCoordenadas(item)
+                      ? `${item.latitude.toFixed(4)}, ${item.longitude.toFixed(4)}`
+                      : 'Sem sinal de GPS'}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </main>
 
-      {/* Modais de Criação e Edição */}
+      {/* 8. MODAIS DE CRUD (PRESERVADOS E INTEGRADOS) */}
       <EquipamentoModal
         isOpen={isEquipModalOpen}
         onClose={() => {
@@ -706,6 +1165,102 @@ export default function Dashboard() {
         itemEmEdicao={itemEmEdicao}
         onSuccess={carregarDados}
       />
+
+      {/* 9. MODAL DE DESPACHO DE AGENTE */}
+      {despachoModal.isOpen && (
+        <div className="fixed inset-0 z-[3000] bg-black/80 flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-[#0a1018] border border-cyan-900 w-full max-w-md p-6 rounded-xl shadow-[0_0_50px_rgba(0,0,0,0.9),0_0_25px_rgba(6,182,212,0.15)] flex flex-col gap-4">
+            <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
+              <div className="flex items-center gap-2">
+                <Shield className="h-5 w-5 text-cyan-400" />
+                <h3 className="text-sm font-mono font-bold tracking-wider text-white uppercase">
+                  DESPACHAR UNIDADE DE INTERVENÇÃO
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setDespachoModal({ isOpen: false, alerta: null });
+                  setAgenteSelecionado('');
+                }}
+                className="text-zinc-500 hover:text-white transition-colors cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {despachoModal.alerta && (
+              <div className="rounded-lg border border-red-500/40 bg-red-950/20 p-3 space-y-1">
+                <div className="flex items-center justify-between text-[10px] font-mono">
+                  <span className="text-red-400 font-bold flex items-center gap-1">
+                    <AlertTriangle className="h-3 w-3" />
+                    {despachoModal.alerta.origem}
+                  </span>
+                  <span className="text-zinc-400">{despachoModal.alerta.tempo}</span>
+                </div>
+                <p className="text-xs text-zinc-200 font-medium leading-snug">
+                  {despachoModal.alerta.titulo}
+                </p>
+              </div>
+            )}
+
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-mono font-bold uppercase text-zinc-400 tracking-wider">
+                Selecione o Agente Disponível
+              </label>
+              <select
+                value={agenteSelecionado}
+                onChange={(e) => setAgenteSelecionado(e.target.value)}
+                className="w-full rounded-lg border border-cyan-800/60 bg-zinc-950 px-3 py-2 text-xs font-mono text-zinc-200 focus:border-cyan-400 focus:outline-none"
+              >
+                <option value="">Selecione um agente disponível...</option>
+                {agentes
+                  .filter((ag) => {
+                    const sit = (ag.situacao || '').toLowerCase().trim();
+                    return sit !== 'inativo' && sit !== 'em ocorrência' && sit !== 'em ocorrencia';
+                  })
+                  .map((ag) => {
+                    const viatura =
+                      (ag as any).viatura || `VTR-${String(ag.id).padStart(2, '0')} (Tática)`;
+                    return (
+                      <option key={ag.id} value={ag.id}>
+                        {ag.nome} - {viatura}
+                      </option>
+                    );
+                  })}
+              </select>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2 border-t border-zinc-800/80">
+              <button
+                type="button"
+                onClick={() => {
+                  setDespachoModal({ isOpen: false, alerta: null });
+                  setAgenteSelecionado('');
+                }}
+                className="px-4 py-2 rounded-lg bg-zinc-900 border border-zinc-700 text-xs font-mono font-bold text-zinc-300 hover:text-white hover:bg-zinc-800 transition-all cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleDespachar}
+                className="px-4 py-2 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-black text-xs font-mono font-bold transition-all cursor-pointer shadow-[0_0_15px_rgba(6,182,212,0.4)]"
+              >
+                Confirmar Despacho
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CYBER-TOAST FLUTUANTE */}
+      {toastMsg && (
+        <div className="fixed bottom-8 right-8 z-[5000] bg-zinc-950/95 border border-cyan-500 text-cyan-300 px-6 py-4 rounded-lg shadow-[0_0_20px_rgba(6,182,212,0.3)] font-mono text-sm animate-fade-in-up flex items-center gap-3 backdrop-blur-md transition-all duration-300">
+          <CheckCircle className="h-5 w-5 text-cyan-400 shrink-0" />
+          <span>{toastMsg.titulo}</span>
+        </div>
+      )}
     </div>
   );
 }

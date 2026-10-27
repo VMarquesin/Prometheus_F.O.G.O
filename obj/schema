@@ -1,0 +1,89 @@
+CREATE EXTENSION IF NOT EXISTS postgis;
+
+CREATE TABLE estados (
+    id SERIAL PRIMARY KEY,
+    uf VARCHAR(2) NOT NULL UNIQUE,
+    nome VARCHAR(50) NOT NULL
+);
+
+CREATE TABLE cidades (
+    id SERIAL PRIMARY KEY,
+    estado_id INTEGER NOT NULL REFERENCES estados (id),
+    nome VARCHAR(100) NOT NULL
+);
+
+CREATE TABLE bairros (
+    id SERIAL PRIMARY KEY,
+    cidade_id INTEGER NOT NULL REFERENCES cidades (id),
+    nome VARCHAR(100) NOT NULL
+);
+
+CREATE TABLE marcas (
+    id SERIAL PRIMARY KEY,
+    nome VARCHAR(100) NOT NULL UNIQUE,
+    criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE modelos (
+    id SERIAL PRIMARY KEY,
+    marca_id INTEGER NOT NULL REFERENCES marcas (id),
+    nome VARCHAR(100) NOT NULL,
+    tipo_equipamento VARCHAR(50) NOT NULL,
+    criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE equipamentos (
+    id SERIAL PRIMARY KEY,
+    modelo_id INTEGER NOT NULL REFERENCES modelos (id),
+    numero_serie VARCHAR(100) UNIQUE,
+    situacao VARCHAR(50) NOT NULL,
+    cep VARCHAR(9),
+    bairro_id INTEGER NOT NULL REFERENCES bairros (id),
+    logradouro VARCHAR(150),
+    numero_referencia VARCHAR(50),
+    coordenadas GEOMETRY (Point, 4326),
+    caracteristicas_especificas JSONB,
+    data_instalacao TIMESTAMP,
+    criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    atualizado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE agentes (
+    id SERIAL PRIMARY KEY,
+    tipo_agente VARCHAR(50) NOT NULL,
+    nome VARCHAR(150) NOT NULL,
+    matricula VARCHAR(50) NOT NULL UNIQUE,
+    situacao VARCHAR(50) NOT NULL,
+    coordenadas_atuais GEOMETRY (Point, 4326),
+    atualizado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE manutencoes (
+    id SERIAL PRIMARY KEY,
+    equipamento_id INTEGER NOT NULL REFERENCES equipamentos (id),
+    tipo_manutencao VARCHAR(50) NOT NULL,
+    status VARCHAR(50) NOT NULL,
+    data_prevista TIMESTAMP,
+    data_conclusao TIMESTAMP,
+    descricao TEXT,
+    criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE historico_eventos (
+    id SERIAL PRIMARY KEY,
+    entidade_tipo VARCHAR(20) NOT NULL,
+    entidade_id INTEGER NOT NULL,
+    evento VARCHAR(100) NOT NULL,
+    detalhes JSONB,
+    criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_equipamentos_situacao ON equipamentos (situacao);
+
+CREATE INDEX idx_agentes_situacao ON agentes (situacao);
+
+CREATE INDEX idx_manutencoes_status ON manutencoes (status);
+
+CREATE INDEX idx_equipamentos_coordenadas ON equipamentos USING GIST (coordenadas);
+
+CREATE INDEX idx_agentes_coordenadas_atuais ON agentes USING GIST (coordenadas_atuais);

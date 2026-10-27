@@ -1,0 +1,41 @@
+info:
+  name: equipamentos POST
+  type: http
+  seq: 1
+
+http:
+  method: POST
+  url: http://localhost:3000/equipamentos
+  body:
+    type: json
+    data: |-
+      {
+        "modeloId": 1,
+        "bairroId": 1,
+        "numeroSerie": "INT-CAM-2026-X9",
+        "situacao": "operacional",
+        "cep": "17600000",
+        "logradouro": "Avenida Tamoios",
+        "numeroReferencia": "Esquina principal",
+        "latitude": -21.9348,
+        "longitude": -50.5146,
+        "caracteristicasEspecificas": {
+          "resolucao": "4K",
+          "visao_noturna": true,
+          "zoom_optico": "10x",
+          "ip": "192.168.1.50"
+        },
+        "dataInstalacao": "2026-10-18T10:00:00Z",
+        "urlImagem": "https://images.unsplash.com/photo-1557597774-9d273605dfa9?q=80&w=600",
+        "tipoLocalId": 2,
+        "orgaoId": 2,
+        "necessidadeManutencao": "agendada",
+        "dataProximaManutencao": "2026-12-15T08:00:00Z"
+      }
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

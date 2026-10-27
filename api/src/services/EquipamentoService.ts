@@ -32,4 +32,21 @@ export class EquipamentoService {
   async listarEquipamentos() {
     return this.repository.listar();
   }
+
+  async buscarPorId(id: number) {
+    return this.repository.buscarPorId(id);
+  }
+
+  async atualizarEquipamento(id: number, dados: Partial<EquipamentoInput>) {
+    const temLat = dados.latitude != null;
+    const temLng = dados.longitude != null;
+    if (temLat !== temLng) {
+      throw new ValidacaoError('Informe latitude e longitude juntas.');
+    }
+    return this.repository.atualizar(id, dados);
+  }
+
+  async excluirEquipamento(id: number) {
+    return this.repository.excluir(id);
+  }
 }

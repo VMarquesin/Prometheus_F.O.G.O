@@ -63,4 +63,43 @@ export class AgenteRepository {
       `SELECT ${SELECT_COLUNAS} FROM agentes ORDER BY id`,
     );
   }
+
+  async buscarPorId(id: number) {
+    const resultado = await prisma.$queryRawUnsafe<unknown[]>(
+      `SELECT ${SELECT_COLUNAS} FROM agentes WHERE id = $1`,
+      id,
+    );
+    return resultado[0] ?? null;
+  }
+
+  async atualizar(id: number, dados: Partial<AgenteInput>) {
+    const latitude = dados.latitude ?? null;
+    const longitude = dados.longitude ?? null;
+
+    await prisma.$queryRaw`
+      UPDATE agentes SET
+        tipo_agente_id = COALESCE(${dados.tipoAgenteId ?? null}, tipo_agente_id),
+        nome = COALESCE(${dados.nome ?? null}, nome),
+        matricula = COALESCE(${dados.matricula ?? null}, matricula),
+        situacao = COALESCE(${dados.situacao ?? null}, situacao),
+        coordenadas_atuais = CASE
+          WHEN ${longitude}::double precision IS NULL OR ${latitude}::double precision IS NULL THEN coordenadas_atuais
+          ELSE ST_SetSRID(ST_MakePoint(${longitude}::double precision, ${latitude}::double precision), 4326)
+        END,
+        url_foto = COALESCE(${dados.urlFoto ?? null}, url_foto),
+        orgao_id = COALESCE(${dados.orgaoId ?? null}, orgao_id),
+        atualizado_em = CURRENT_TIMESTAMP
+      WHERE id = ${id}
+    `;
+
+    return this.buscarPorId(id);
+  }
+
+  async excluir(id: number) {
+    await prisma.$queryRawUnsafe(
+      `UPDATE agentes SET situacao = 'inativo', atualizado_em = CURRENT_TIMESTAMP WHERE id = $1`,
+      id,
+    );
+    return { id, situacao: 'inativo' };
+  }
 }

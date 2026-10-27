@@ -94,4 +94,55 @@ export class EquipamentoRepository {
       `SELECT ${SELECT_COLUNAS} FROM equipamentos ORDER BY id`,
     );
   }
+
+  async buscarPorId(id: number) {
+    const resultado = await prisma.$queryRawUnsafe<unknown[]>(
+      `SELECT ${SELECT_COLUNAS} FROM equipamentos WHERE id = $1`,
+      id,
+    );
+    return resultado[0] ?? null;
+  }
+
+  async atualizar(id: number, dados: Partial<EquipamentoInput>) {
+    const latitude = dados.latitude ?? null;
+    const longitude = dados.longitude ?? null;
+    const caracteristicas =
+      dados.caracteristicasEspecificas != null
+        ? JSON.stringify(dados.caracteristicasEspecificas)
+        : null;
+
+    await prisma.$queryRaw`
+      UPDATE equipamentos SET
+        modelo_id = COALESCE(${dados.modeloId ?? null}, modelo_id),
+        numero_serie = COALESCE(${dados.numeroSerie ?? null}, numero_serie),
+        situacao = COALESCE(${dados.situacao ?? null}, situacao),
+        cep = COALESCE(${dados.cep ?? null}, cep),
+        bairro_id = COALESCE(${dados.bairroId ?? null}, bairro_id),
+        logradouro = COALESCE(${dados.logradouro ?? null}, logradouro),
+        numero_referencia = COALESCE(${dados.numeroReferencia ?? null}, numero_referencia),
+        coordenadas = CASE
+          WHEN ${longitude}::double precision IS NULL OR ${latitude}::double precision IS NULL THEN coordenadas
+          ELSE ST_SetSRID(ST_MakePoint(${longitude}::double precision, ${latitude}::double precision), 4326)
+        END,
+        caracteristicas_especificas = COALESCE(${caracteristicas}::jsonb, caracteristicas_especificas),
+        data_instalacao = COALESCE(${dados.dataInstalacao ?? null}::timestamp, data_instalacao),
+        url_imagem = COALESCE(${dados.urlImagem ?? null}, url_imagem),
+        tipo_local_id = COALESCE(${dados.tipoLocalId ?? null}, tipo_local_id),
+        orgao_id = COALESCE(${dados.orgaoId ?? null}, orgao_id),
+        necessidade_manutencao = COALESCE(${dados.necessidadeManutencao ?? null}, necessidade_manutencao),
+        data_proxima_manutencao = COALESCE(${dados.dataProximaManutencao ?? null}::timestamp, data_proxima_manutencao),
+        atualizado_em = CURRENT_TIMESTAMP
+      WHERE id = ${id}
+    `;
+
+    return this.buscarPorId(id);
+  }
+
+  async excluir(id: number) {
+    await prisma.$queryRawUnsafe(
+      `UPDATE equipamentos SET situacao = 'desativado', atualizado_em = CURRENT_TIMESTAMP WHERE id = $1`,
+      id,
+    );
+    return { id, situacao: 'desativado' };
+  }
 }
